@@ -1,6 +1,6 @@
 {
   "version": 2,
-  "buildCommand": "prisma generate",
+  "buildCommand": "prisma generate --no-engine",
   "builds": [
     {
       "src": "app.js",
