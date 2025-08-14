@@ -21,13 +21,22 @@ const MAX_EVENTS = 50; // Store the last 50 events
 app.get('/', (req, res) => {
   const { 'hub.mode': mode, 'hub.challenge': challenge, 'hub.verify_token': token } = req.query;
 
-  if (mode === 'subscribe' && token === verifyToken) {
-    console.log('WEBHOOK VERIFIED');
+  // --- MODIFIED: Add logging and trim whitespace for robust verification ---
+  console.log('--- VERIFICATION ATTEMPT ---');
+  console.log('Token from Meta:', token);
+  console.log('Token from .env:', verifyToken);
+
+  if (mode === 'subscribe' && token && verifyToken && token.trim() === verifyToken.trim()) {
+    console.log('WEBHOOK VERIFIED SUCCESSFULLY');
     res.status(200).send(challenge);
   } else {
+    console.error('WEBHOOK VERIFICATION FAILED');
     res.sendStatus(403);
   }
+  console.log('--- END VERIFICATION ---');
 });
+
+
 
 // Route for POST requests (Receiving Webhooks)
 app.post('/', async (req, res) => {
