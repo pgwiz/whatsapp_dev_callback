@@ -144,6 +144,65 @@ app.get('/logger', (req, res) => {
   res.send(html);
 });
 
+// --- NEW: Database viewer page route, only active in DEV_MODE ---
+app.get('/seeme', async (req, res) => {
+  if (process.env.DEV_MODE !== 'true') {
+    return res.status(404).send('Not Found');
+  }
+
+  try {
+    const events = await prisma.webhookEvent.findMany({
+      orderBy: { createdAt: 'desc' },
+      take: 20, // Get the last 20 events
+    });
+
+    // Generate a simple HTML table to display the events
+    let html = `
+      <style>
+        body { font-family: sans-serif; background-color: #f4f4f9; color: #333; padding: 20px; }
+        h1 { color: #444; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        th, td { padding: 12px; border: 1px solid #ddd; text-align: left; }
+        th { background-color: #007bff; color: white; }
+        tr:nth-child(even) { background-color: #f2f2f2; }
+        pre { background-color: #eee; padding: 10px; border-radius: 4px; white-space: pre-wrap; word-wrap: break-word; }
+      </style>
+      <head><title>Database Viewer</title><meta http-equiv="refresh" content="5"></head>
+      <body>
+        <h1>Webhook Database Viewer</h1>
+        <p>Showing the last ${events.length} events saved to the database (auto-refreshes every 5 seconds).</p>
+        <table>
+          <tr>
+            <th>ID</th>
+            <th>Received At</th>
+            <th>Processed?</th>
+            <th>Payload</th>
+          </tr>
+    `;
+
+    if (events.length === 0) {
+      html += '<tr><td colspan="4">No events found in the database.</td></tr>';
+    } else {
+      events.forEach(event => {
+        html += `
+          <tr>
+            <td>${event.id}</td>
+            <td>${new Date(event.createdAt).toLocaleString()}</td>
+            <td>${event.processed}</td>
+            <td><pre><code>${JSON.stringify(event.payload, null, 2)}</code></pre></td>
+          </tr>
+        `;
+      });
+    }
+
+    html += '</table></body>';
+    res.send(html);
+
+  } catch (error) {
+    console.error('Error fetching from database:', error);
+    res.status(500).send('Error fetching data from the database.');
+  }
+});
 
 // Start the server
 app.listen(port, () => {
