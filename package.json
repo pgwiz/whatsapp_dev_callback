@@ -5,7 +5,8 @@
   "main": "app.js",
   "scripts": {
     "start": "node app.js",
-    "dev": "nodemon app.js"
+    "dev": "nodemon app.js",
+    "build": "prisma generate"
   },
   "dependencies": {
     "@prisma/client": "^5.14.0",
@@ -17,8 +18,5 @@
   },
   "engines": {
     "node": ">=18"
-  },
-  "prisma": {
-    "seed": "node prisma/seed.js"
   }
 }
