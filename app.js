@@ -19,7 +19,14 @@ const MAX_EVENTS = 50; // Store the last 50 events
 
 // Route for GET requests (Webhook Verification)
 app.get('/', (req, res) => {
-  // ... (this route is unchanged)
+  const { 'hub.mode': mode, 'hub.challenge': challenge, 'hub.verify_token': token } = req.query;
+
+  if (mode === 'subscribe' && token === verifyToken) {
+    console.log('WEBHOOK VERIFIED');
+    res.status(200).send(challenge);
+  } else {
+    res.sendStatus(403);
+  }
 });
 
 // Route for POST requests (Receiving Webhooks)
@@ -57,9 +64,34 @@ app.post('/', async (req, res) => {
 
 // Endpoint for the Python worker (unchanged)
 app.get('/events', async (req, res) => {
-  // ... (this route is unchanged)
-});
+  try {
+    // 1. Find all unprocessed events
+    const unprocessedEvents = await prisma.webhookEvent.findMany({
+      where: { processed: false },
+      orderBy: { createdAt: 'asc' }, // Process oldest first
+      take: 10, // Process in batches of 10
+    });
 
+    if (unprocessedEvents.length === 0) {
+      return res.json([]);
+    }
+
+    // 2. Mark these events as processed so they aren't fetched again
+    const eventIds = unprocessedEvents.map(event => event.id);
+    await prisma.webhookEvent.updateMany({
+      where: { id: { in: eventIds } },
+      data: { processed: true },
+    });
+
+    console.log(`Fetched and marked ${unprocessedEvents.length} events as processed.`);
+    
+    // 3. Return the events to the worker
+    res.json(unprocessedEvents);
+  } catch (error) {
+    console.error('Error fetching events:', error);
+    res.status(500).json({ error: 'Failed to fetch events' });
+  }
+});
 // --- NEW: Logger page route, only active in DEV_MODE ---
 app.get('/logger', (req, res) => {
   if (process.env.DEV_MODE !== 'true') {
