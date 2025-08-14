@@ -1,10 +1,17 @@
-// Import Express and Prisma Client
 const express = require('express');
-const { PrismaClient } = require('@prisma/client');
+// highlight-start
+// Import the Edge-optimized client and the extension
+const { PrismaClient } = require('@prisma/client/edge');
+const { withAccelerate } = require('@prisma/extension-accelerate');
+// highlight-end
 
-// Initialize Express and Prisma
+// Initialize Express
 const app = express();
-const prisma = new PrismaClient();
+
+// highlight-start
+// Initialize Prisma with the Accelerate extension
+// It will automatically use the DATABASE_URL from your environment
+const prisma = new PrismaClient().$extends(withAccelerate());
 
 // Middleware to parse JSON bodies
 app.use(express.json());
