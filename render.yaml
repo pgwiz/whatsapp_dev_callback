@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: express-webhook
+    env: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: VERIFY_TOKEN
+        value: TEstToken

@@ -1,0 +1,24 @@
+{
+  "name": "express-webhook",
+  "version": "1.0.0",
+  "description": "A simple Express.js webhook server",
+  "main": "app.js",
+  "scripts": {
+    "start": "node app.js",
+    "dev": "nodemon app.js"
+  },
+  "dependencies": {
+    "@prisma/client": "^5.14.0",
+    "express": "^4.19.2"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.0",
+    "prisma": "^5.14.0"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "prisma": {
+    "seed": "node prisma/seed.js"
+  }
+}
