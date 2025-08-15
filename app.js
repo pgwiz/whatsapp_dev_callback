@@ -78,30 +78,37 @@ app.post('/', async (req, res) => {
   }
 });
 
-// Endpoint for the Python worker (unchanged)
 app.get('/events', async (req, res) => {
+  // highlight-start
+  // --- SECURITY CHECK ---
+  const providedApiKey = req.headers['x-internal-api-key'];
+  const expectedApiKey = process.env.INTERNAL_API_KEY;
+
+  if (!providedApiKey || providedApiKey !== expectedApiKey) {
+    console.warn('Unauthorized attempt to access /events');
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  // --- END SECURITY CHECK ---
+  // highlight-end
+
   try {
-    // 1. Find all unprocessed events
+    // 1. Find all unprocessed events (this logic is unchanged)
     const unprocessedEvents = await prisma.webhookEvent.findMany({
       where: { processed: false },
-      orderBy: { createdAt: 'asc' }, // Process oldest first
-      take: 10, // Process in batches of 10
+      orderBy: { createdAt: 'asc' },
+      take: 10,
     });
 
-    if (unprocessedEvents.length === 0) {
-      return res.json([]);
+    if (unprocessedEvents.length > 0) {
+      const eventIds = unprocessedEvents.map(event => event.id);
+      await prisma.webhookEvent.updateMany({
+        where: { id: { in: eventIds } },
+        data: { processed: true },
+      });
+      console.log(`Fetched and marked ${unprocessedEvents.length} events as processed.`);
     }
-
-    // 2. Mark these events as processed so they aren't fetched again
-    const eventIds = unprocessedEvents.map(event => event.id);
-    await prisma.webhookEvent.updateMany({
-      where: { id: { in: eventIds } },
-      data: { processed: true },
-    });
-
-    console.log(`Fetched and marked ${unprocessedEvents.length} events as processed.`);
     
-    // 3. Return the events to the worker
+    // 3. Return the events to the authorized worker
     res.json(unprocessedEvents);
   } catch (error) {
     console.error('Error fetching events:', error);
