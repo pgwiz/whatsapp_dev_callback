@@ -1,28 +1,46 @@
+// --- NEW: Import http and Socket.IO Server ---
 const express = require('express');
-// highlight-start
-// Import the Edge-optimized client and the extension
+const http = require('http');
+const { Server } = require("socket.io");
 const { PrismaClient } = require('@prisma/client/edge');
 const { withAccelerate } = require('@prisma/extension-accelerate');
-// highlight-end
 
-// Initialize Express
+// --- NEW: Initialize http server and wrap the Express app ---
 const app = express();
-
-// highlight-start
-// Initialize Prisma with the Accelerate extension
-// It will automatically use the DATABASE_URL from your environment
+const server = http.createServer(app);
+const io = new Server(server);
 const prisma = new PrismaClient().$extends(withAccelerate());
 
 // Middleware to parse JSON bodies
 app.use(express.json());
 
-// Set port and verify_token
+// Set port and environment variables
 const port = process.env.PORT || 3000;
 const verifyToken = process.env.VERIFY_TOKEN;
+const socketSecret = process.env.SOCKET_IO_SECRET; // For security
 
-// --- NEW: In-memory store for recent events (for logger page) ---
+// In-memory store for logger page
 const recentEvents = [];
-const MAX_EVENTS = 50; // Store the last 50 events
+const MAX_EVENTS = 50;
+
+// --- NEW: Socket.IO Security Middleware ---
+// This ensures only clients with the secret key can connect.
+io.use((socket, next) => {
+    const token = socket.handshake.auth.token;
+    if (token && token === socketSecret) {
+        next();
+    } else {
+        console.warn('Unauthorized Socket.IO connection attempt rejected.');
+        next(new Error("Authentication error"));
+    }
+});
+
+io.on('connection', (socket) => {
+    console.log('A backend service connected via Socket.IO');
+    socket.on('disconnect', () => {
+        console.log('A backend service disconnected');
+    });
+});
 
 // Route for GET requests (Webhook Verification)
 app.get('/', (req, res) => {
@@ -49,6 +67,7 @@ app.get('/', (req, res) => {
 app.post('/', async (req, res) => {
   const timestamp = new Date().toISOString();
   console.log(`\nWebhook received at ${timestamp}\n`);
+  
 
   // --- NEW: Add event to our in-memory logger if in DEV_MODE ---
   if (process.env.DEV_MODE === 'true') {
@@ -64,18 +83,21 @@ app.post('/', async (req, res) => {
   }
 
   try {
-    // Save the webhook payload to the database
     await prisma.webhookEvent.create({
-      data: {
-        payload: req.body,
-      },
+      data: { payload: req.body },
     });
     console.log('Webhook event saved to database.');
+
+    // --- NEW: Emit the event to all connected backend services ---
+    io.emit('new_webhook_event', req.body);
+    console.log('Emitted new_webhook_event via Socket.IO');
+
     res.sendStatus(200);
   } catch (error) {
-    console.error('Error saving webhook to database:', error);
+    console.error('Error in webhook handler:', error);
     res.sendStatus(500);
   }
+
 });
 
 app.get('/events', async (req, res) => {
