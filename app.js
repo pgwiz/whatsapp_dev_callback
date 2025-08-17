@@ -8,7 +8,12 @@ const { withAccelerate } = require('@prisma/extension-accelerate');
 // --- NEW: Initialize http server and wrap the Express app ---
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server);
+const io = new Server(server, {
+    cors: {
+        origin: "*", // Allows your other backend service to connect
+        methods: ["GET", "POST"]
+    }
+});
 const prisma = new PrismaClient().$extends(withAccelerate());
 
 // Middleware to parse JSON bodies
@@ -63,23 +68,13 @@ app.get('/', (req, res) => {
 
 
 
-// Route for POST requests (Receiving Webhooks)
 app.post('/', async (req, res) => {
   const timestamp = new Date().toISOString();
-  console.log(`\nWebhook received at ${timestamp}\n`);
-  
+  console.log(`\nWebhook received at ${timestamp}`);
 
-  // --- NEW: Add event to our in-memory logger if in DEV_MODE ---
   if (process.env.DEV_MODE === 'true') {
-    recentEvents.unshift({
-      id: new Date().getTime(),
-      timestamp: timestamp,
-      payload: req.body,
-    });
-    // Keep the array from getting too large
-    if (recentEvents.length > MAX_EVENTS) {
-      recentEvents.pop();
-    }
+    recentEvents.unshift({ id: new Date().getTime(), timestamp: timestamp, payload: req.body });
+    if (recentEvents.length > MAX_EVENTS) { recentEvents.pop(); }
   }
 
   try {
@@ -88,7 +83,7 @@ app.post('/', async (req, res) => {
     });
     console.log('Webhook event saved to database.');
 
-    // --- NEW: Emit the event to all connected backend services ---
+    // Emit the event to all connected backend services
     io.emit('new_webhook_event', req.body);
     console.log('Emitted new_webhook_event via Socket.IO');
 
@@ -97,7 +92,6 @@ app.post('/', async (req, res) => {
     console.error('Error in webhook handler:', error);
     res.sendStatus(500);
   }
-
 });
 
 app.get('/events', async (req, res) => {
@@ -233,7 +227,4 @@ app.get('/seeme', async (req, res) => {
   }
 });
 
-// Start the server
-app.listen(port, () => {
-  console.log(`Webhook server listening on port ${port}`);
-});
+module.exports = server;
