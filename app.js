@@ -1,19 +1,26 @@
-// --- NEW: Import http and Socket.IO Server ---
+// vercel-webhook-service.js
+
 const express = require('express');
 const http = require('http');
 const { Server } = require("socket.io");
 const { PrismaClient } = require('@prisma/client/edge');
 const { withAccelerate } = require('@prisma/extension-accelerate');
 
-// --- NEW: Initialize http server and wrap the Express app ---
 const app = express();
 const server = http.createServer(app);
+
+// --- NEW: Added heartbeat configuration for connection stability ---
 const io = new Server(server, {
     cors: {
-        origin: "*", // Allows your other backend service to connect
+        origin: "*", 
         methods: ["GET", "POST"]
-    }
+    },
+    // Proactively check connection health every 25 seconds
+    pingInterval: 25000, 
+    // Wait 20 seconds for a response before disconnecting
+    pingTimeout: 20000   
 });
+
 const prisma = new PrismaClient().$extends(withAccelerate());
 
 // Middleware to parse JSON bodies
@@ -24,12 +31,11 @@ const port = process.env.PORT || 3000;
 const verifyToken = process.env.VERIFY_TOKEN;
 const socketSecret = process.env.SOCKET_IO_SECRET; // For security
 
-// In-memory store for logger page
+// In-memory store for logger page (for development)
 const recentEvents = [];
 const MAX_EVENTS = 50;
 
-// --- NEW: Socket.IO Security Middleware ---
-// This ensures only clients with the secret key can connect.
+// Socket.IO Security Middleware: Ensures only authenticated clients can connect.
 io.use((socket, next) => {
     const token = socket.handshake.auth.token;
     if (token && token === socketSecret) {
@@ -41,9 +47,9 @@ io.use((socket, next) => {
 });
 
 io.on('connection', (socket) => {
-    console.log('A backend service connected via Socket.IO');
-    socket.on('disconnect', () => {
-        console.log('A backend service disconnected');
+    console.log(`A backend service connected via Socket.IO (ID: ${socket.id})`);
+    socket.on('disconnect', (reason) => {
+        console.log(`A backend service disconnected (ID: ${socket.id}, Reason: ${reason})`);
     });
 });
 
@@ -51,7 +57,6 @@ io.on('connection', (socket) => {
 app.get('/', (req, res) => {
   const { 'hub.mode': mode, 'hub.challenge': challenge, 'hub.verify_token': token } = req.query;
 
-  // --- MODIFIED: Add logging and trim whitespace for robust verification ---
   console.log('--- VERIFICATION ATTEMPT ---');
   console.log('Token from Meta:', token);
   console.log('Token from .env:', verifyToken);
@@ -67,7 +72,7 @@ app.get('/', (req, res) => {
 });
 
 
-
+// Route for POST requests (Incoming Webhooks)
 app.post('/', async (req, res) => {
   const timestamp = new Date().toISOString();
   console.log(`\nWebhook received at ${timestamp}`);
@@ -78,6 +83,7 @@ app.post('/', async (req, res) => {
   }
 
   try {
+    // Persist the event to the database
     await prisma.webhookEvent.create({
       data: { payload: req.body },
     });
@@ -94,9 +100,9 @@ app.post('/', async (req, res) => {
   }
 });
 
+// Route for event polling (as a fallback or for other services)
 app.get('/events', async (req, res) => {
-  // highlight-start
-  // --- SECURITY CHECK ---
+  // Security Check: Ensure only authorized services can poll for events
   const providedApiKey = req.headers['x-internal-api-key'];
   const expectedApiKey = process.env.INTERNAL_API_KEY;
 
@@ -104,11 +110,9 @@ app.get('/events', async (req, res) => {
     console.warn('Unauthorized attempt to access /events');
     return res.status(401).json({ error: 'Unauthorized' });
   }
-  // --- END SECURITY CHECK ---
-  // highlight-end
-
+  
   try {
-    // 1. Find all unprocessed events (this logic is unchanged)
+    // Find unprocessed events
     const unprocessedEvents = await prisma.webhookEvent.findMany({
       where: { processed: false },
       orderBy: { createdAt: 'asc' },
@@ -117,6 +121,7 @@ app.get('/events', async (req, res) => {
 
     if (unprocessedEvents.length > 0) {
       const eventIds = unprocessedEvents.map(event => event.id);
+      // Mark events as processed
       await prisma.webhookEvent.updateMany({
         where: { id: { in: eventIds } },
         data: { processed: true },
@@ -124,14 +129,14 @@ app.get('/events', async (req, res) => {
       console.log(`Fetched and marked ${unprocessedEvents.length} events as processed.`);
     }
     
-    // 3. Return the events to the authorized worker
+    // Return the events
     res.json(unprocessedEvents);
   } catch (error) {
     console.error('Error fetching events:', error);
     res.status(500).json({ error: 'Failed to fetch events' });
   }
 });
-// --- NEW: Logger page route, only active in DEV_MODE ---
+// --- Development-only Logger Page ---
 app.get('/logger', (req, res) => {
   if (process.env.DEV_MODE !== 'true') {
     return res.status(404).send('Not Found');
@@ -167,7 +172,7 @@ app.get('/logger', (req, res) => {
   res.send(html);
 });
 
-// --- NEW: Database viewer page route, only active in DEV_MODE ---
+// --- Development-only Database Viewer Page ---
 app.get('/seeme', async (req, res) => {
   if (process.env.DEV_MODE !== 'true') {
     return res.status(404).send('Not Found');
